@@ -1,10 +1,13 @@
 ﻿using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
+using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Directory;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
+using Nop.Services.Customers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,8 +27,13 @@ namespace NopBrasil.Plugin.Payments.PagSeguro.Services
         private readonly IOrderService _orderService;
         private readonly IOrderProcessingService _orderProcessingService;
         private readonly IStoreContext _storeContext;
+        private readonly ICustomerService _customerService;
+        private readonly IAddressService _addressService;
+        private readonly ICountryService _countryService;
+        private readonly IStateProvinceService _stateProvinceService;
+        private readonly IProductService _productService;
 
-        public PagSeguroService(ISettingService settingService, ICurrencyService currencyService, CurrencySettings currencySettings, PagSeguroPaymentSetting pagSeguroPaymentSetting, IOrderService orderService, IOrderProcessingService orderProcessingService, IStoreContext storeContext)
+        public PagSeguroService(ISettingService settingService, ICurrencyService currencyService, CurrencySettings currencySettings, PagSeguroPaymentSetting pagSeguroPaymentSetting, IOrderService orderService, IOrderProcessingService orderProcessingService, IStoreContext storeContext, ICustomerService customerService, IAddressService addressService, ICountryService countryService, IStateProvinceService stateProvinceService, IProductService _productService)
         {
             this._settingService = settingService;
             this._currencyService = currencyService;
@@ -34,6 +42,11 @@ namespace NopBrasil.Plugin.Payments.PagSeguro.Services
             this._orderService = orderService;
             this._orderProcessingService = orderProcessingService;
             this._storeContext = storeContext;
+            this._customerService = customerService;
+            this._addressService = addressService;
+            this._countryService = countryService;
+            this._stateProvinceService = stateProvinceService;
+            this._productService = _productService;
         }
 
         public Uri CreatePayment(PostProcessPaymentRequest postProcessPaymentRequest)
@@ -54,9 +67,12 @@ namespace NopBrasil.Plugin.Payments.PagSeguro.Services
 
         private void LoadingSender(PostProcessPaymentRequest postProcessPaymentRequest, PaymentRequest payment)
         {
+            var billingAddress = _addressService.GetAddressById(postProcessPaymentRequest.Order.BillingAddressId);
+            var customer = _customerService.GetCustomerById(postProcessPaymentRequest.Order.CustomerId);
+
             payment.Sender = new Sender();
-            payment.Sender.Email = postProcessPaymentRequest.Order.Customer.Email;
-            payment.Sender.Name = $"{postProcessPaymentRequest.Order.BillingAddress.FirstName} {postProcessPaymentRequest.Order.BillingAddress.LastName}";
+            payment.Sender.Email = customer.Email;
+            payment.Sender.Name = $"{billingAddress.FirstName} {billingAddress.LastName}";
         }
 
         private decimal GetConvertedRate(decimal rate)
@@ -79,28 +95,34 @@ namespace NopBrasil.Plugin.Payments.PagSeguro.Services
             adress.Complement = string.Empty;
             adress.District = string.Empty;
             adress.Number = string.Empty;
-            if (postProcessPaymentRequest.Order.ShippingAddress != null)
-            {
-                adress.City = postProcessPaymentRequest.Order.ShippingAddress.City;
-                adress.Country = postProcessPaymentRequest.Order.ShippingAddress.Country.Name;
-                adress.PostalCode = postProcessPaymentRequest.Order.ShippingAddress.ZipPostalCode;
-                adress.State = postProcessPaymentRequest.Order.ShippingAddress.StateProvince.Name;
-                adress.Street = postProcessPaymentRequest.Order.ShippingAddress.Address1;
+            
+            if (postProcessPaymentRequest.Order.ShippingAddressId.HasValue) {
+                var shippingAddress = _addressService.GetAddressById(postProcessPaymentRequest.Order.ShippingAddressId.Value);
+                if (shippingAddress != null)
+                {
+                    adress.City = shippingAddress.City;
+                    adress.Country = _countryService.GetCountryById(shippingAddress.CountryId ?? 0)?.Name ?? "*";
+                    adress.PostalCode = shippingAddress.ZipPostalCode;
+                    adress.State = _stateProvinceService.GetStateProvinceById(shippingAddress.StateProvinceId ?? 0)?.Name ?? "*";
+                    adress.Street = shippingAddress.Address1;
+                }
             }
             payment.Shipping.Cost = Math.Round(GetConvertedRate(postProcessPaymentRequest.Order.OrderShippingInclTax), 2);
         }
 
         private void LoadingItems(PostProcessPaymentRequest postProcessPaymentRequest, PaymentRequest payment)
         {
-            foreach (var product in postProcessPaymentRequest.Order.OrderItems)
+            foreach (var orderItem in _orderService.GetOrderItems(postProcessPaymentRequest.Order.Id))
             {
+                var product = _productService.GetProductById(orderItem.ProductId);
+
                 Item item = new Item();
-                item.Amount = Math.Round(GetConvertedRate(product.UnitPriceInclTax), 2);
-                item.Description = product.Product.Name;
+                item.Amount = Math.Round(GetConvertedRate(orderItem.UnitPriceInclTax), 2);
+                item.Description = product.Name;
                 item.Id = product.Id.ToString();
-                item.Quantity = product.Quantity;
-                if (product.ItemWeight.HasValue)
-                    item.Weight = Convert.ToInt64(product.ItemWeight);
+                item.Quantity = orderItem.Quantity;
+                if (orderItem.ItemWeight.HasValue)
+                    item.Weight = Convert.ToInt64(orderItem.ItemWeight);
                 payment.Items.Add(item);
             }
         }
