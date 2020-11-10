@@ -103,8 +103,10 @@ namespace NopBrasil.Plugin.Payments.PagSeguro.Services
                     adress.City = shippingAddress.City;
                     adress.Country = _countryService.GetCountryById(shippingAddress.CountryId ?? 0)?.Name ?? "*";
                     adress.PostalCode = shippingAddress.ZipPostalCode;
-                    adress.State = _stateProvinceService.GetStateProvinceById(shippingAddress.StateProvinceId ?? 0)?.Name ?? "*";
+                    adress.State = _stateProvinceService.GetStateProvinceById(shippingAddress.StateProvinceId ?? 0)?.Abbreviation ?? "*";
                     adress.Street = shippingAddress.Address1;
+                    adress.Number = ".";
+                    payment.Shipping.Address = adress;
                 }
             }
             payment.Shipping.Cost = Math.Round(GetConvertedRate(postProcessPaymentRequest.Order.OrderShippingInclTax), 2);
