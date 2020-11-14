@@ -78,7 +78,8 @@ namespace NopBrasil.Plugin.Payments.PagSeguro
             }
             catch (Exception e)
             {
-                _logger.Error(e.Message, e);
+                _logger.Error('PagSeguro Error: ' + e.Message, e);
+                throw e;
             }
         }
 
