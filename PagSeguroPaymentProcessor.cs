@@ -78,8 +78,7 @@ namespace NopBrasil.Plugin.Payments.PagSeguro
             }
             catch (Exception e)
             {
-                _logger.Error('PagSeguro Error: ' + e.Message, e);
-                throw e;
+                _logger.Error("PagSeguro Error: Pagamento não realizado pois não foi possível redirecionar o cliente ao site do PagSeguro. Motivo: " + e.Message, e);
             }
         }
 
